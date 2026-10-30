@@ -1,4 +1,5 @@
 export interface Selection {
+  confidence?: 'high' | 'uncertain';
   x: number; y: number; width: number; height: number;
   viewportWidth: number; viewportHeight: number;
   scrollX: number; scrollY: number; dpr: number; url: string;

@@ -14,10 +14,10 @@ export function previewScan(regions: Selection[]): Promise<number[]> {
       .controls { position:fixed; bottom:16px; left:16px; max-width:440px; padding:16px; border-radius:12px; background:#17283e; color:white; font:16px/1.5 system-ui; box-shadow:0 2px 12px #0005; }
       .controls button { padding:8px 12px; margin:8px 8px 0 0; }
       </style><div class="regions"></div><div class="controls" role="dialog" aria-label="Review detected bubbles">
-      Click a highlighted region to include or exclude it. Press Space to translate your selection. Detection can mistake artwork for text.
+      Click a highlighted region to include or exclude it. Press Space to translate your selection. Dashed “Check” regions start unselected. Detection can mistake artwork for text.
       <div id="count" aria-live="polite"></div><div id="estimate"></div><small>Each selected bubble uses one normal paid translation request. Actual cost varies with image size and dialogue.</small><br>
       <button id="translate"></button><button id="cancel">Cancel (Esc)</button></div>`;
-    const selected = new Set(regions.map((_, i) => i));
+    const selected = new Set(regions.map((r, i) => r.confidence === 'uncertain' ? -1 : i).filter(i => i >= 0));
     const confirm = root.querySelector<HTMLButtonElement>('#translate')!;
     const refresh = () => {
       root.querySelector('#count')!.textContent = `${selected.size} of ${regions.length} bubbles selected`;
@@ -26,9 +26,9 @@ export function previewScan(regions: Selection[]): Promise<number[]> {
     };
     regions.forEach((r, i) => {
       const button = document.createElement('button'); button.className = 'region';
-      button.setAttribute('aria-label', `Include bubble ${i + 1}`); button.setAttribute('aria-pressed', 'true');
+      button.setAttribute('aria-label', `Include bubble ${i + 1}`); button.setAttribute('aria-pressed', String(selected.has(i)));
       Object.assign(button.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.width}px`, height: `${r.height}px` });
-      const number = document.createElement('span'); number.className = 'number'; number.textContent = `${i + 1}`; button.append(number);
+      const number = document.createElement('span'); number.className = 'number'; number.textContent = `${i + 1}${r.confidence === 'uncertain' ? ' · Check' : ''}`; button.append(number);
       button.onclick = () => { if (selected.has(i)) selected.delete(i); else selected.add(i); button.setAttribute('aria-pressed', String(selected.has(i))); refresh(); };
       root.querySelector('.regions')!.append(button);
     });

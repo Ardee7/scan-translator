@@ -38,6 +38,13 @@ test('Space confirms only the selected bubbles; repeats, modifiers and synthetic
     assert.deepEqual(await result, [1]);
     assert.equal(listeners.has('keydown'), false); // Space no longer intercepted after review.
 
+    const uncertain = previewScan([{ ...regions[0], confidence: 'high' }, { ...regions[1], confidence: 'uncertain' }]);
+    space(); assert.deepEqual(await uncertain, [0]); // Uncertain crops are not paid for by default.
+    const optIn = previewScan([{ ...regions[0], confidence: 'uncertain' }]);
+    assert.equal(root!.querySelector('#translate').disabled, true);
+    root!.querySelector('.regions').children[0].onclick!();
+    space(); assert.deepEqual(await optIn, [0]);
+
     const empty = previewScan(regions);
     root!.querySelector('.regions').children.forEach(button => button.onclick!());
     assert.equal(root!.querySelector('#translate').disabled, true);
