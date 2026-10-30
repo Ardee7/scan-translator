@@ -59,7 +59,6 @@ No full-page scan or image URL fetching occurs. Browser-restricted pages (includ
 
 Open the extension from its toolbar icon on the comic tab, then enable **Click-to-translate mode**. Enabling it makes no API request. Click white space **inside a fully visible white speech bubble**. A local pixel detector finds the connected white interior, and the existing single vision request translates that crop. English appears in a temporary page overlay and is also saved in history.
 
-- A blue crosshair box follows your cursor to mark the click point; it is a guide, not a predicted bubble boundary, and is hidden during screenshots.
 - Overlay text fits the available space at 24–48 CSS pixels, with centered dialogue and scrolling for long text. Browser zoom still affects its on-screen size.
 - Hover the overlay to reveal the original; focus/click it to read or scroll longer translations. Double-click dismisses that overlay.
 - **Esc** or switching the toggle off removes the overlays and restores normal clicking. Navigation turns the mode off. The mode is for one tab at a time.

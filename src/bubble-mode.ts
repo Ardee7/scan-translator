@@ -22,20 +22,9 @@ export function bubbleMode(action: 'enable' | 'disable' | 'hide' | 'show' | 'res
     .note { position:fixed; bottom:12px; left:12px; background:#17283e; color:white; padding:9px 12px; border-radius:8px; font:13px system-ui; }
     .bubble { position:fixed; box-sizing:border-box; pointer-events:auto; background:white; color:#15263c; border:2px solid #7299d8; border-radius:20px; padding:16px; font:24px/1.4 system-ui; font-weight:500; display:flex; flex-direction:column; overflow:auto; white-space:pre-wrap; text-align:center; box-shadow:0 2px 8px #0002; }
     .translation { flex:none; margin:auto 0; width:100%; overflow-wrap:anywhere; }
-    .cursor-guide { position:fixed; width:36px; height:36px; box-sizing:border-box; border:2px solid #2563eb; border-radius:6px; transform:translate(-50%,-50%); background:#60a5fa18; box-shadow:0 0 0 1px white; pointer-events:none; }
-    .cursor-guide::before, .cursor-guide::after { content:''; position:absolute; background:#2563eb; box-shadow:0 0 0 1px white; }
-    .cursor-guide::before { width:12px; height:2px; left:10px; top:15px; }
-    .cursor-guide::after { width:2px; height:12px; left:15px; top:10px; }
     .bubble:hover { opacity:0; } .bubble:focus { opacity:1; outline:3px solid #2458b8; }
-    </style><div class="cursor-guide" hidden></div><div class="note">Click a white bubble to translate · Esc exits · Hover translation to see original</div>`;
+    </style><div class="note">Click a white bubble to translate · Esc exits · Hover translation to see original</div>`;
   document.documentElement.append(host);
-  const guide = shadow.querySelector<HTMLElement>('.cursor-guide')!;
-  const pointer = (e: PointerEvent) => {
-    guide.hidden = e.composedPath().includes(host);
-    guide.style.left = `${e.clientX}px`;
-    guide.style.top = `${e.clientY}px`;
-  };
-  const leave = () => { guide.hidden = true; };
   const cards: { node: HTMLElement; x: number; y: number }[] = [];
   const layout = () => {
     for (const card of cards) { card.node.style.left = `${card.x - scrollX}px`; card.node.style.top = `${card.y - scrollY}px`; }
@@ -55,15 +44,11 @@ export function bubbleMode(action: 'enable' | 'disable' | 'hide' | 'show' | 'res
   function cleanup() {
     host.remove(); window.removeEventListener('click', click, true); window.removeEventListener('keydown', key, true);
     window.removeEventListener('scroll', scroll, true); window.removeEventListener('resize', clear);
-    window.removeEventListener('pointermove', pointer, true);
-    document.documentElement.removeEventListener('pointerleave', leave);
     observer.disconnect();
     delete win.__scanBubbleMode;
   }
   const observer = new ResizeObserver(clear);
   observer.observe(document.documentElement);
-  window.addEventListener('pointermove', pointer, true);
-  document.documentElement.addEventListener('pointerleave', leave);
   window.addEventListener('click', click, true); window.addEventListener('keydown', key, true);
   window.addEventListener('scroll', scroll, true); window.addEventListener('resize', clear);
   win.__scanBubbleMode = { token, host, cleanup, add(s: Selection, translation: string, popup: boolean) {
