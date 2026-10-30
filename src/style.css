@@ -37,3 +37,4 @@ h2 { font-size: 15px; margin: 0; } #history-count { font-size: 12px; color: #647
 
 .scan-job { padding: 10px 12px; border-radius: 8px; background: #e8eef8; font-size: 12px; overflow-wrap: anywhere; }
 .scan-job.error { background: #fce9e6; color: #902e24; }
+.mode-toggle { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: #eaf0fb; border-radius: 8px; font-weight: 600; margin-top: 14px; }

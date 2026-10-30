@@ -55,6 +55,18 @@ After rebuilding, click Reload on the extension card in `chrome://extensions`, t
 
 No full-page scan or image URL fetching occurs. Browser-restricted pages (including Chrome settings and the Web Store), DRM and protected content are not bypassed. Normal browser zoom is supported; reset trackpad pinch zoom before selection. Selection cancels if the viewport scrolls or resizes. Page animations may still change content; use a stable visible panel.
 
+## Optional click-to-translate mode
+
+Open the extension from its toolbar icon on the comic tab, then enable **Click-to-translate mode**. Enabling it makes no API request. Click white space **inside a fully visible white speech bubble**. A local pixel detector finds the connected white interior, and the existing single vision request translates that crop. English appears in a temporary page overlay and is also saved in history.
+
+- Hover the overlay to reveal the original; focus/click it to read or scroll longer translations. Double-click dismisses that overlay.
+- **Esc** or switching the toggle off removes the overlays and restores normal clicking. Navigation turns the mode off. The mode is for one tab at a time.
+- Snipping and **⌘⇧S** remain available. While click mode is on, a manual snip displays its translation in a nearby popup, useful for colored or irregular bubbles.
+- Detection is conservative: white page backgrounds, clipped, tiny or unreliable regions fail locally without an API request. It is not semantic bubble recognition and can mistake other enclosed white shapes for bubbles. Check the recognized source.
+- This draws a plain white overlay; it does not erase pixels, reconstruct artwork or match comic fonts. Long translations can scroll. Overlays follow ordinary document scrolling, and are removed after resize/layout-size changes or nested scrolling to avoid stale placement. Saved side-panel history remains.
+- Existing three-request concurrency, history, copy controls and settings remain available. Repeated clicks with an exactly identical crop reuse a small in-memory cache (up to 100 crops' text results/hashes). No images are cached. Cache is cleared with history and does not survive service-worker suspension; changed zoom/pixels can require a new paid call.
+- No image-editing provider or extra paid service is used. Each uncached translation has the same API pricing as manual snipping.
+
 ## Privacy and architecture
 
 - `src/selection.ts`: injected on demand in Chrome's isolated content-script world; captures viewport CSS coordinates, removes its overlay, then waits for paint. Receives no API key or image data.
@@ -71,7 +83,7 @@ No full-page scan or image URL fetching occurs. Browser-restricted pages (includ
 
 `npm run build` and `npm test` pass. Automated tests cover Retina/fractional zoom crop coordinates, scrolled viewport coordinates, edge rounding, invalid selections, the request shape, output validation, and useful API error messages. A worker integration harness verifies crop-only transmission, duplicate prevention, invalid-key recovery, preserved settings, new selections, Clear and tab-change rejection. The harness uses test-only browser/API stubs; these are **not shipped** and do not establish real visual capture or translation quality.
 
-**Not yet manually verified:** unpacked installation, real Chrome overlay/capture/crop alignment, clipboard access, live OpenAI authentication, live French recognition/translation, rate-limit responses, and repeated live captures on Webtoon. Chrome is available, but live extension testing was not performed and no personal key or paid request was used.
+**Original manual checklist (the user has since confirmed the core snipping/translation flow works):** unpacked installation, real Chrome overlay/capture/crop alignment, clipboard access, live OpenAI authentication, live French recognition/translation, rate-limit responses, and repeated live captures on Webtoon. Chrome is available, but live extension testing was not performed and no personal key or paid request was used.
 
 Manual acceptance checklist:
 
@@ -83,3 +95,5 @@ Manual acceptance checklist:
 - Switch tabs/resize during selection: selection must fail safely; retry on the original tab.
 - Try a deliberately invalid key to see the useful error, restore the real key, and retry. This involves provider requests.
 - Verify Copy, Clear, empty-text handling and restricted-page errors. Clear must preserve Settings.
+
+Click-mode automated checks cover closed-bubble detection with dark lettering, refusal of open backgrounds/clipped bubbles/tiny highlights, authorized versus forged click messages, crop-only submission, cached repeats, manual snipping with overlays hidden, and navigation cleanup. Live Chrome rendering, white-bubble detection on actual Webtoon art, hover/popup interaction and overlay alignment still need a manual check. No live paid calls were used to test this feature.

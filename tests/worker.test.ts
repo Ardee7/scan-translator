@@ -6,6 +6,10 @@ test('worker workflow: crop only, duplicate guard, errors, retry, trusted storag
   let listener: any;
   let actionListener: any;
   let commandListener: any;
+  let navigationListener: any;
+  let modeToken = '';
+  const modeActions: string[] = [];
+  const session: Record<string, unknown> = {};
   let openedWindow: number | undefined;
   let tabUrl: string | undefined = 'https://example.com';
   let state: State | undefined;
@@ -26,7 +30,7 @@ test('worker workflow: crop only, duplicate guard, errors, retry, trusted storag
   const originalFetch = globalThis.fetch;
   Object.assign(globalThis, {
     chrome: {
-      storage: { local: {
+      storage: { session: { get: async () => ({ ...session }), set: async (value: any) => Object.assign(session, value), remove: async (key: string) => { delete session[key]; } }, local: {
         setAccessLevel: async (v: any) => { accessLevel = v.accessLevel; },
         get: async () => ({ ...storage }),
         set: async (v: any) => Object.assign(storage, v),
@@ -38,10 +42,16 @@ test('worker workflow: crop only, duplicate guard, errors, retry, trusted storag
       runtime: { id: 'test', getURL: (p: string) => `chrome-extension://test/${p}`, getPlatformInfo: async () => ({}),
         sendMessage: async (v: any) => { state = v.state; }, onMessage: { addListener: (fn: any) => { listener = fn; } } },
       tabs: {
+        onUpdated: { addListener: (fn: any) => { navigationListener = fn; } }, onRemoved: { addListener: () => {} },
         query: async () => [{ id: activeId, windowId: 1, url: tabUrl }],
         captureVisibleTab: async () => { captures++; captureTimes.push(Date.now()); return 'data:image/png;base64,RlVMTA=='; },
       },
       scripting: { executeScript: async (v: any) => {
+        if (v.func.name === 'bubbleMode') {
+          modeActions.push(v.args[0]);
+          if (v.args[0] === 'enable') modeToken = v.args[1];
+          return [{}];
+        }
         if (v.func.name === 'selectArea') {
           if (waitSelection) await new Promise<void>(r => { selectGate = r; });
           return [{ result: selection }];
@@ -52,7 +62,14 @@ test('worker workflow: crop only, duplicate guard, errors, retry, trusted storag
     createImageBitmap: async () => ({ width: 2000, height: 1600, close() {} }),
     OffscreenCanvas: class {
       constructor(public width: number, public height: number) {}
-      getContext() { return { drawImage: (_: unknown, ...args: number[]) => assert.deepEqual(args, [200, 100, 400, 300, 0, 0, 400, 300]) }; }
+      getContext() { return {
+        drawImage: (_: unknown, ...args: number[]) => assert.deepEqual(args, args.length === 4 ? [0, 0, 1000, 800] : [200, 100, 400, 300, 0, 0, 400, 300]),
+        getImageData: () => {
+          const data = new Uint8ClampedArray(1000 * 800 * 4);
+          for (let y = 50; y < 200; y++) for (let x = 100; x < 300; x++) data.fill(255, (y * 1000 + x) * 4, (y * 1000 + x) * 4 + 4);
+          return { data };
+        },
+      }; }
       async convertToBlob() { return new Blob(['CROP']); }
     },
     fetch: async (_url: string, init: RequestInit) => {
@@ -172,5 +189,35 @@ test('worker workflow: crop only, duplicate guard, errors, retry, trusted storag
     send({ type: 'clear' });
     await until('idle');
     assert.deepEqual(state!.jobs, []);
+    const panelCall = (message: object) => new Promise(resolve => listener(message, sender, resolve));
+    await panelCall({ type: 'setClickMode', enabled: true, windowId: 1 });
+    assert.equal(state!.clickMode, true);
+    assert.ok(modeToken);
+    assert.deepEqual(session.clickMode, { tabId: 7, token: modeToken });
+    const previousRequests = requests;
+    listener({ type: 'bubbleClick', token: 'forged', selection }, { id: 'test', frameId: 0, tab: { id: 7, windowId: 1 }, url: viewport.url }, () => {});
+    await new Promise(r => setTimeout(r, 10));
+    assert.equal(requests, previousRequests);
+    assert.equal(modeActions.at(-1), 'enable');
+    // Manual snipping remains usable in mode and hides/restores page overlays.
+    deferred = false;
+    send({ type: 'start', windowId: 1 });
+    await until('success');
+    assert.ok(modeActions.includes('hide'));
+    assert.ok(modeActions.includes('show'));
+    assert.ok(modeActions.includes('result'));
+    const clickSender = { id: 'test', frameId: 0, tab: { id: 7, windowId: 1 }, url: viewport.url };
+    const clickMessage = { type: 'bubbleClick', token: modeToken, selection: { ...selection, x: 150, y: 100 } };
+    const beforeClick = requests;
+    const beforeHistory = state!.history!.length;
+    listener(clickMessage, clickSender, () => {});
+    await waitFor(() => state!.history!.length === beforeHistory + 1 && state!.activeRequests === 0);
+    assert.equal(requests, beforeClick + 1);
+    listener(clickMessage, clickSender, () => {});
+    await waitFor(() => state!.history!.length === beforeHistory + 2 && state!.activeRequests === 0);
+    assert.equal(requests, beforeClick + 1); // Identical crop reuses the in-memory translation.
+    navigationListener(7, { status: 'loading' });
+    await waitFor(() => state!.clickMode === false);
+    assert.equal(session.clickMode, undefined);
   } finally { globalThis.fetch = originalFetch; }
 });

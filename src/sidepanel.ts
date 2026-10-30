@@ -27,6 +27,8 @@ function languageName(language: string) {
 }
 function render(state: State) {
   current = state;
+  element<HTMLInputElement>('click-mode').checked = !!state.clickMode;
+  element<HTMLInputElement>('click-mode').disabled = !!state.captureBusy;
   const history = state.history ?? [];
   const busy = !!state.captureBusy || (state.activeRequests ?? 0) > 0;
   const full = (state.activeRequests ?? 0) >= 3;
@@ -127,3 +129,13 @@ void chrome.commands.getAll().then(commands => {
     ? `Snip: ${shortcut} · Esc to cancel`
     : 'Assign a snip shortcut at chrome://extensions/shortcuts. Esc cancels selection.';
 });
+
+element<HTMLInputElement>('click-mode').onchange = async () => {
+  const toggle = element<HTMLInputElement>('click-mode');
+  toggle.disabled = true;
+  try {
+    const win = await chrome.windows.getCurrent();
+    await send({ type: 'setClickMode', enabled: toggle.checked, windowId: win.id });
+  } catch { toggle.checked = !!current?.clickMode; status.textContent = 'Could not change mode. Reopen the panel and try again.'; }
+  finally { toggle.disabled = !!current?.captureBusy; }
+};
