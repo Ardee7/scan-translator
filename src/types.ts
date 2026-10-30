@@ -20,6 +20,7 @@ export interface ScanJob {
 }
 export interface State {
   clickMode?: boolean;
+  textDetection?: boolean;
   captureBusy?: boolean;
   activeRequests?: number;
   jobs?: ScanJob[];

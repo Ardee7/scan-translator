@@ -27,6 +27,8 @@ function languageName(language: string) {
 }
 function render(state: State) {
   current = state;
+  element<HTMLInputElement>('text-detection').checked = !!state.textDetection;
+  element<HTMLInputElement>('text-detection').disabled = !!state.captureBusy;
   element<HTMLInputElement>('click-mode').checked = !!state.clickMode;
   element<HTMLInputElement>('click-mode').disabled = !!state.captureBusy;
   const history = state.history ?? [];
@@ -136,5 +138,15 @@ element<HTMLInputElement>('click-mode').onchange = async () => {
     const win = await chrome.windows.getCurrent();
     await send({ type: 'setClickMode', enabled: toggle.checked, windowId: win.id });
   } catch { toggle.checked = !!current?.clickMode; status.textContent = 'Could not change mode. Reopen the panel and try again.'; }
+  finally { toggle.disabled = !!current?.captureBusy; }
+};
+
+element<HTMLInputElement>('text-detection').onchange = async () => {
+  const toggle = element<HTMLInputElement>('text-detection');
+  toggle.disabled = true;
+  try {
+    const response = await send({ type: 'setTextDetection', enabled: toggle.checked });
+    if (response?.error) throw new Error();
+  } catch { toggle.checked = !!current?.textDetection; status.textContent = 'Could not save detection preference. Try again.'; }
   finally { toggle.disabled = !!current?.captureBusy; }
 };

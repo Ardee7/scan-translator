@@ -14,7 +14,9 @@
     </form>
   </details>
   <label class="mode-toggle"><input id="click-mode" type="checkbox"> Click-to-translate mode</label>
-  <p class="privacy">Click white space inside a bubble → English overlay. Hover to reveal original. Esc exits. If detection fails, snip manually. Each new translation uses API credits.</p>
+  <label class="mode-toggle"><input id="text-detection" type="checkbox"> Detect nearby text on any background (experimental)</label>
+  <p class="privacy">Text detection runs locally for free. Click near text and confirm the highlighted crop; translation still uses API credits. For stylized text or incorrect crops, cancel and snip manually.</p>
+  <p class="privacy">With white-bubble detection: click white space inside a bubble → English overlay. Hover to reveal original. Esc exits. If detection fails, snip manually. Each new translation uses API credits.</p>
   <button id="select" class="primary">Select area to translate</button>
   <p id="shortcut" class="privacy"></p>
   <p class="privacy">Text history stays on this device until cleared. Images are never saved.</p>

@@ -32,7 +32,7 @@ export function bubbleMode(action: 'enable' | 'disable' | 'hide' | 'show' | 'res
     @keyframes spin { to { transform:rotate(360deg); } }
     @media (prefers-reduced-motion:reduce) { .spinner { animation:none; } }
     .bubble:hover { opacity:0; } .bubble:focus { opacity:1; outline:3px solid #2458b8; }
-    </style><div class="loading" hidden role="status"><span class="spinner"></span><span class="loading-text"></span></div><div class="note">Click a white bubble to translate · Esc exits · Hover translation to see original</div>`;
+    </style><div class="loading" hidden role="status"><span class="spinner"></span><span class="loading-text"></span></div><div class="note">Click a bubble or nearby text to translate · Esc exits · Hover translation to see original</div>`;
   document.documentElement.append(host);
   const loading = shadow.querySelector<HTMLElement>('.loading')!;
   const loadingText = shadow.querySelector<HTMLElement>('.loading-text')!;
@@ -56,7 +56,7 @@ export function bubbleMode(action: 'enable' | 'disable' | 'hide' | 'show' | 'res
       scrollX, scrollY, dpr: devicePixelRatio, url: location.href,
     } }).catch(() => {});
   };
-  const key = (e: KeyboardEvent) => { if (e.key === 'Escape') { cleanup(); void chrome.runtime.sendMessage({ type: 'bubbleExit', token }).catch(() => {}); } };
+  const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && host.style.visibility !== 'hidden') { cleanup(); void chrome.runtime.sendMessage({ type: 'bubbleExit', token }).catch(() => {}); } };
   function cleanup() {
     host.remove(); window.removeEventListener('click', click, true); window.removeEventListener('keydown', key, true);
     window.removeEventListener('scroll', scroll, true); window.removeEventListener('resize', clear);
