@@ -1,3 +1,5 @@
+import { scanScreenshot } from './viewport-scan';
+import { previewScan } from './scan-preview';
 import { bubbleMode } from './bubble-mode';
 import { detectBubble } from './bubble';
 import { cropScreenshot } from './crop';
@@ -31,6 +33,7 @@ const modeReady = chrome.storage.session.get('clickMode').then(saved => {
 chrome.tabs.onUpdated.addListener((tabId, change) => {
   if (change.status === 'loading') void modeReady.then(async () => {
     if (clickMode?.tabId !== tabId) return;
+    if (batch) batch.cancelled = true;
     clickMode = undefined;
     await chrome.storage.session.remove('clickMode');
     update({ ...state, message: 'Page changed. Enable click mode again on the new page.' });
@@ -39,12 +42,14 @@ chrome.tabs.onUpdated.addListener((tabId, change) => {
 chrome.tabs.onRemoved.addListener(tabId => {
   void modeReady.then(async () => {
     if (clickMode?.tabId !== tabId) return;
+    if (batch) batch.cancelled = true;
     clickMode = undefined;
     await chrome.storage.session.remove('clickMode');
     update({ ...state, message: 'Comic tab closed. Click mode is off.' });
   });
 });
 const bubbleCache = new Map<string, Promise<import('./types').Translation>>();
+let batch: { total: number; done: number; cancelled: boolean } | undefined;
 let busy = false; // Only selection/capture owns this lock; API calls may overlap.
 let jobs: (ScanJob & { tabId: number })[] = [];
 const activeRequests = () => jobs.filter(job => job.status === 'translating').length;
@@ -53,6 +58,7 @@ let lastScanAt = 0;
 let historyWrite = Promise.resolve();
 let openingFromShortcut = false;
 chrome.commands.onCommand.addListener((command, tab) => {
+  if (batch) return;
   if (command === 'toggle-click-mode' && tab?.id && !busy && !openingFromShortcut) {
     openingFromShortcut = true;
     void modeReady.then(() => setClickMode(clickMode?.tabId !== tab.id, tab.windowId)).catch(e => {
@@ -76,7 +82,7 @@ function update(next: State) {
   // A completed background request must not replace instructions for the current selection.
   const visible = busy && (next.phase === 'success' || next.phase === 'error')
     ? { ...next, phase: state.phase, message: state.message } : next;
-  state = { ...visible, flexibleBubbles, clickMode: !!clickMode, history, jobs: [...jobs], captureBusy: busy, activeRequests: activeRequests() };
+  state = { ...visible, batch: batch ? { ...batch } : undefined, flexibleBubbles, clickMode: !!clickMode, history, jobs: [...jobs], captureBusy: busy, activeRequests: activeRequests() };
   void chrome.runtime.sendMessage({ type: 'state', state }).catch(() => {});
   if (clickMode) {
     const count = jobs.filter(job => job.tabId === clickMode!.tabId && job.status === 'translating').length;
@@ -93,13 +99,12 @@ async function assertSameViewport(tab: chrome.tabs.Tab, s: Selection) {
     throw new Error('The page moved, navigated or zoom changed. Select the region again.');
   }
 }
-async function run(windowId: number, expectedTabId?: number, clicked?: Selection, modeToken?: string) {
-  if (busy || activeRequests() >= 3) return;
+async function run(windowId: number, expectedTabId?: number, clicked?: Selection) {
+  if (batch || busy || activeRequests() >= 3) return;
   busy = true; // Acquire before any await: duplicate side panels cannot submit twice.
   // Chrome API activity keeps MV3 alive while selecting and awaiting the provider.
   const keepAlive = setInterval(() => void chrome.runtime.getPlatformInfo(), 20_000);
   let ownsCapture = true;
-  let job: (ScanJob & { tabId: number }) | undefined;
   let screenshot = '';
   let cropped = '';
   let hiddenTab: number | undefined;
@@ -148,15 +153,37 @@ async function run(windowId: number, expectedTabId?: number, clicked?: Selection
       await chrome.scripting.executeScript({ target: { tabId: hiddenTab }, func: bubbleMode, args: ['show'] });
       hiddenTab = undefined;
     }
-    lastScanAt = Math.max(Date.now(), lastScanAt + 1);
-    job = { tabId: tab.id, id: crypto.randomUUID(), createdAt: lastScanAt, status: 'translating', message: 'Translating…' };
-    jobs = [...jobs, job];
     busy = false;
     ownsCapture = false;
-    update({ phase: 'translating', message: 'Translation running. You can snip another area.' });
+    const image = cropped; cropped = '';
+    await submitCrop(tab, selection, image, apiKey, overlayToken, !clicked, !!clicked);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : 'Something went wrong. Please select again.';
+    if (hiddenTab) {
+      await chrome.scripting.executeScript({ target: { tabId: hiddenTab }, func: bubbleMode, args: ['show'] }).catch(() => {});
+      hiddenTab = undefined;
+    }
+    if (ownsCapture) { busy = false; ownsCapture = false; }
+    update({ phase: 'error', message });
+  } finally {
+    screenshot = cropped = '';
+    if (hiddenTab) await chrome.scripting.executeScript({ target: { tabId: hiddenTab }, func: bubbleMode, args: ['show'] }).catch(() => {});
+    clearInterval(keepAlive);
+    if (ownsCapture) busy = false;
+  }
+}
+async function fingerprint(image: string) {
+  return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(image))), b => b.toString(16).padStart(2, '0')).join('');
+}
+async function submitCrop(tab: chrome.tabs.Tab, selection: Selection, cropped: string, apiKey: string, overlayToken: string | undefined, popup: boolean, useCache: boolean) {
+  lastScanAt = Math.max(Date.now(), lastScanAt + 1);
+  const job = { tabId: tab.id!, id: crypto.randomUUID(), createdAt: lastScanAt, status: 'translating' as const, message: 'Translating…' };
+  jobs = [...jobs, job];
+  try {
+    update({ phase: 'translating', message: batch ? 'Translating approved bubbles…' : 'Translation running. You can snip another area.' });
     let result;
-    if (clicked) {
-      const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(cropped))), b => b.toString(16).padStart(2, '0')).join('');
+    if (useCache) {
+      const hash = await fingerprint(cropped);
       let request = bubbleCache.get(hash);
       if (!request) {
         request = translate(cropped, apiKey);
@@ -172,8 +199,8 @@ async function run(windowId: number, expectedTabId?: number, clicked?: Selection
     if (result.bubbles.length) {
       history = [{ id: job.id, createdAt: job.createdAt, result }, ...history].sort((a, b) => b.createdAt - a.createdAt);
       message = 'Translation added to your history.';
-      if (overlayToken && clickMode?.token === overlayToken && (!clicked || overlayToken === modeToken)) {
-        await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: bubbleMode, args: ['result', overlayToken, selection, result.bubbles.map(b => b.translation).join('\n\n'), !clicked] }).catch(() => {});
+      if (overlayToken && clickMode?.token === overlayToken) {
+        await chrome.scripting.executeScript({ target: { tabId: tab.id! }, func: bubbleMode, args: ['result', overlayToken, selection, result.bubbles.map(b => b.translation).join('\n\n'), popup] }).catch(() => {});
       }
       const snapshot = history;
       const write = historyWrite.catch(() => {}).then(() => chrome.storage.local.set({ history: snapshot }));
@@ -182,20 +209,89 @@ async function run(windowId: number, expectedTabId?: number, clicked?: Selection
       catch { message = 'Translated, but local history could not be saved. Copy your translations before closing Chrome.'; }
     }
     update({ phase: 'success', message, result });
+    return true;
   } catch (e) {
-    const message = e instanceof Error ? e.message : 'Something went wrong. Please select again.';
-    if (job) jobs = jobs.map(item => item.id === job!.id ? { ...item, status: 'error', message } : item);
-    if (hiddenTab) {
-      await chrome.scripting.executeScript({ target: { tabId: hiddenTab }, func: bubbleMode, args: ['show'] }).catch(() => {});
-      hiddenTab = undefined;
-    }
-    if (ownsCapture) { busy = false; ownsCapture = false; }
+    const message = e instanceof Error ? e.message : 'Translation failed. Select the region again to retry.';
+    jobs = jobs.map(item => item.id === job.id ? { ...item, status: 'error', message } : item);
     update({ phase: 'error', message });
+    return false;
+  } finally { cropped = ''; }
+}
+async function scanViewport(windowId: number) {
+  if (busy || batch || activeRequests()) return;
+  busy = true;
+  batch = { total: 0, done: 0, cancelled: false };
+  const keepAlive = setInterval(() => void chrome.runtime.getPlatformInfo(), 20_000);
+  let screenshot = '';
+  let hiddenTab: number | undefined;
+  const crops: { selection: Selection; image: string }[] = [];
+  try {
+    await Promise.all([historyReady, modeReady]);
+    const [tab] = await chrome.tabs.query({ active: true, windowId });
+    if (!tab?.id || !/^https?:\/\//.test(tab.url ?? '')) throw new Error('Open a comic page and click the extension toolbar icon to grant access first.');
+    if (clickMode?.tabId !== tab.id) await setClickMode(true, windowId);
+    const token = clickMode!.token;
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: bubbleMode, args: ['hide'] });
+    hiddenTab = tab.id;
+    update({ phase: 'selecting', message: 'Scanning the visible screen locally. No API request yet…' });
+    const [frame] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: viewportState });
+    const view = frame.result;
+    if (!view?.visible || view.scale !== 1) throw new Error('Return to the comic page and reset pinch zoom before scanning.');
+    const viewport: Selection = { ...view, x: 0, y: 0, width: view.viewportWidth, height: view.viewportHeight };
+    await new Promise(resolve => setTimeout(resolve, Math.max(100, 550 - (Date.now() - lastCaptureAt))));
+    await assertSameViewport(tab, viewport);
+    lastCaptureAt = Date.now();
+    screenshot = await chrome.tabs.captureVisibleTab(windowId, { format: 'png' });
+    await assertSameViewport(tab, viewport);
+    const regions = await scanScreenshot(screenshot, viewport);
+    const hashes = new Set<string>();
+    for (const selection of regions) {
+      const image = await cropScreenshot(screenshot, selection), hash = await fingerprint(image);
+      if (hashes.has(hash) || bubbleCache.has(hash)) continue;
+      hashes.add(hash); crops.push({ selection, image });
+    }
+    screenshot = '';
+    if (!crops.length) {
+      update({ phase: 'idle', message: regions.length ? 'These detected bubbles are already translated in this session.' : 'No clear bubbles with text found. Try individual clicks or snip manually.' });
+      return;
+    }
+    update({ phase: 'selecting', message: `Review ${crops.length} detected bubbles on the page. Deselect mistakes before approving paid translations.` });
+    const [preview] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: previewScan, args: [crops.map(c => c.selection)] });
+    const selected = Array.isArray(preview.result) ? [...new Set(preview.result)].filter(i => Number.isInteger(i) && i >= 0 && i < crops.length) : [];
+    if (!selected.length || batch.cancelled) {
+      update({ phase: 'idle', message: 'Viewport scan cancelled. No API request was sent.' }); return;
+    }
+    await assertSameViewport(tab, viewport);
+    const { apiKey, paidConsent } = await chrome.storage.local.get(['apiKey', 'paidConsent']);
+    if (typeof apiKey !== 'string' || !apiKey || !paidConsent) throw new Error('Save your API key and accept API charges in Settings before translating. Scanning used no API credits.');
+    const selectedSet = new Set(selected);
+    crops.forEach((crop, i) => { if (!selectedSet.has(i)) crop.image = ''; });
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: bubbleMode, args: ['show'] });
+    hiddenTab = undefined; busy = false;
+    batch.total = selected.length;
+    let next = 0, failed = false;
+    update({ phase: 'translating', message: `Translating ${selected.length} approved bubbles…` });
+    await Promise.all(Array.from({ length: Math.min(3, selected.length) }, async () => {
+      while (next < selected.length && !batch!.cancelled) {
+        const crop = crops[selected[next++]];
+        const image = crop.image; crop.image = '';
+        const ok = await submitCrop(tab, crop.selection, image, apiKey, token, false, true);
+        batch!.done++;
+        // Do not spend more credits after an API error; in-flight requests finish.
+        if (!ok) { failed = true; batch!.cancelled = true; }
+        update({ ...state });
+      }
+    }));
+    update({ phase: failed ? 'error' : 'success', message: failed ? 'Viewport translation stopped after an error. Completed translations are saved; retry remaining bubbles manually.'
+      : batch.cancelled ? `Stopped after ${batch.done} of ${batch.total} bubbles. Already-sent requests may be billed.`
+      : `Translated ${batch.done} bubbles. Results are saved in your history.` });
+  } catch (e) {
+    busy = false;
+    update({ phase: 'error', message: e instanceof Error ? e.message : 'Could not scan this page. Try again.' });
   } finally {
-    screenshot = cropped = '';
+    screenshot = ''; crops.forEach(c => { c.image = ''; });
     if (hiddenTab) await chrome.scripting.executeScript({ target: { tabId: hiddenTab }, func: bubbleMode, args: ['show'] }).catch(() => {});
-    clearInterval(keepAlive);
-    if (ownsCapture) busy = false;
+    clearInterval(keepAlive); busy = false; batch = undefined; update({ ...state });
   }
 }
 async function setClickMode(enabled: boolean, windowId: number) {
@@ -221,6 +317,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     void modeReady.then(async () => {
       if (!clickMode || sender.tab?.id !== clickMode.tabId || message.token !== clickMode.token) return;
       if (message.type === 'bubbleExit') {
+        if (batch) batch.cancelled = true;
         clickMode = undefined;
         await chrome.storage.session.remove('clickMode');
         update({ ...state, message: 'Click mode off. Snipping is still available.' });
@@ -228,7 +325,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         const s = message.selection;
         if (s && s.url === sender.url && ['x', 'y', 'viewportWidth', 'viewportHeight', 'scrollX', 'scrollY', 'dpr'].every(k => Number.isFinite(s[k]))
           && s.x >= 0 && s.y >= 0 && s.x < s.viewportWidth && s.y < s.viewportHeight) {
-          void run(sender.tab!.windowId, sender.tab!.id, s, message.token);
+          void run(sender.tab!.windowId, sender.tab!.id, s);
         }
       }
     }).finally(() => respond({ ok: true }));
@@ -236,7 +333,14 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   }
   // Only the bundled side panel may initiate capture, change settings or read state.
   if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL('sidepanel.html')) return;
-  if (message.type === 'setFlexibleBubbles' && !busy) {
+  if (message.type === 'scanViewport' && Number.isInteger(message.windowId)) {
+    void scanViewport(message.windowId); respond({ ok: true }); return;
+  }
+  if (message.type === 'stopBatch') {
+    if (batch) { batch.cancelled = true; update({ ...state, message: 'Stopping queued translations. Already-sent requests will finish.' }); }
+    respond({ ok: true }); return;
+  }
+  if (message.type === 'setFlexibleBubbles' && !busy && !batch) {
     void historyReady.then(async () => {
       flexibleBubbles = message.enabled === true;
       await chrome.storage.local.set({ flexibleBubbles });
@@ -245,7 +349,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     }).catch(() => respond({ error: true }));
     return true;
   }
-  if (message.type === 'setClickMode' && !busy) {
+  if (message.type === 'setClickMode' && !busy && !batch) {
     void (async () => {
       await setClickMode(message.enabled, message.windowId);
       respond({ ok: true });
@@ -256,7 +360,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     void Promise.all([historyReady, modeReady]).then(() => respond(state)).catch(() => respond({ ...state, phase: 'error', message: 'Could not load local history. Reopen the extension to retry.' }));
     return true;
   }
-  if (message.type === 'clear' && !busy && activeRequests() === 0) {
+  if (message.type === 'clear' && !busy && !batch && activeRequests() === 0) {
     busy = true;
     void (async () => {
       await historyReady;
@@ -282,7 +386,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     void protectedStorage.then(() => chrome.storage.local.get(['apiKey', 'paidConsent'])).then(v => respond({ hasKey: !!v.apiKey, paidConsent: !!v.paidConsent }));
     return true;
   }
-  if (message.type === 'saveSettings' && !busy && activeRequests() === 0) {
+  if (message.type === 'saveSettings' && !busy && !batch && activeRequests() === 0) {
     void (async () => {
       await protectedStorage;
       const key = typeof message.key === 'string' ? message.key.trim() : '';
@@ -292,7 +396,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     })().catch(() => respond({ error: 'Could not save settings. Try again.' }));
     return true;
   }
-  if (message.type === 'removeKey' && !busy && activeRequests() === 0) {
+  if (message.type === 'removeKey' && !busy && !batch && activeRequests() === 0) {
     void protectedStorage.then(() => chrome.storage.local.remove(['apiKey', 'paidConsent'])).then(() => respond({ ok: true }));
     return true;
   }

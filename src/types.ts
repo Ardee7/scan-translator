@@ -19,6 +19,7 @@ export interface ScanJob {
   message: string;
 }
 export interface State {
+  batch?: { total: number; done: number; cancelled: boolean };
   clickMode?: boolean;
   flexibleBubbles?: boolean;
   captureBusy?: boolean;

@@ -18,6 +18,10 @@
   <p class="privacy">Click inside a bubble in the comic image—even on empty background. Its color and shape do not need to match a template. Detection is local and free; translation still uses API credits. If its boundary blends into the artwork, snip manually.</p>
   <p class="privacy">Click a bubble → English overlay. Turn off flexible detection to use the original white-only detector. Hover to reveal original. Esc exits. If detection fails, snip manually. Each new translation uses API credits.</p>
   <button id="select" class="primary">Select area to translate</button>
+  <button id="scan-viewport">Translate visible screen</button>
+  <p class="privacy">Scan locally, review highlighted bubbles, then approve paid translations. Up to 20 candidates per scan.</p>
+  <button id="stop-batch" hidden>Stop remaining translations</button>
+  <p id="batch-progress" role="status"></p>
   <p id="shortcut" class="privacy"></p>
   <p class="privacy">Text history stays on this device until cleared. Images are never saved.</p>
   <p id="status" role="status" aria-live="polite"></p>

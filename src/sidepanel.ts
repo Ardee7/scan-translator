@@ -28,18 +28,22 @@ function languageName(language: string) {
 function render(state: State) {
   current = state;
   element<HTMLInputElement>('flexible-bubbles').checked = !!state.flexibleBubbles;
-  element<HTMLInputElement>('flexible-bubbles').disabled = !!state.captureBusy;
+  element<HTMLInputElement>('flexible-bubbles').disabled = !!state.captureBusy || !!state.batch;
   element<HTMLInputElement>('click-mode').checked = !!state.clickMode;
-  element<HTMLInputElement>('click-mode').disabled = !!state.captureBusy;
+  element<HTMLInputElement>('click-mode').disabled = !!state.captureBusy || !!state.batch;
+  element<HTMLButtonElement>('scan-viewport').disabled = !!state.batch || !!state.captureBusy || (state.activeRequests ?? 0) > 0;
+  element<HTMLButtonElement>('stop-batch').hidden = !state.batch?.total;
+  element<HTMLButtonElement>('stop-batch').disabled = !!state.batch?.cancelled;
+  element('batch-progress').textContent = state.batch?.total ? `${state.batch.done} / ${state.batch.total} bubbles finished${state.batch.cancelled ? ' · Stopping…' : ''}` : '';
   const history = state.history ?? [];
-  const busy = !!state.captureBusy || (state.activeRequests ?? 0) > 0;
-  const full = (state.activeRequests ?? 0) >= 3;
+  const busy = !!state.batch || !!state.captureBusy || (state.activeRequests ?? 0) > 0;
+  const full = !!state.batch || (state.activeRequests ?? 0) >= 3;
   select.disabled = retry.disabled = !!state.captureBusy || full;
   clear.disabled = busy || (!history.length && !state.jobs?.length);
   element<HTMLFormElement>('settings-form').querySelectorAll<HTMLInputElement | HTMLButtonElement>('input,button').forEach(el => el.disabled = busy);
   copy.disabled = !history.length;
   retry.hidden = state.phase !== 'error';
-  select.textContent = state.captureBusy ? (state.phase === 'selecting' ? 'Draw your selection…' : 'Capturing…') : full ? '3 translations running…' : 'Translate an area';
+  select.textContent = state.captureBusy ? (state.phase === 'selecting' ? 'Draw your selection…' : 'Capturing…') : state.batch ? 'Viewport translation running…' : full ? '3 translations running…' : 'Translate an area';
   status.textContent = state.message;
   const jobs = element('jobs');
   jobs.replaceChildren();
@@ -150,3 +154,11 @@ element<HTMLInputElement>('flexible-bubbles').onchange = async () => {
   } catch { toggle.checked = !!current?.flexibleBubbles; status.textContent = 'Could not save detection preference. Try again.'; }
   finally { toggle.disabled = !!current?.captureBusy; }
 };
+
+element('scan-viewport').onclick = async () => {
+  try {
+    const win = await chrome.windows.getCurrent();
+    await send({ type: 'scanViewport', windowId: win.id });
+  } catch { status.textContent = 'Could not start scanning. Reopen the extension on the comic page.'; }
+};
+element('stop-batch').onclick = () => void send({ type: 'stopBatch' });
