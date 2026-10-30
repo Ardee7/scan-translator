@@ -50,14 +50,15 @@ After rebuilding, click Reload on the extension card in `chrome://extensions`, t
 3. Drag over the region. **Releasing sends that crop to OpenAI and can incur an API charge.** Press Escape to cancel before release.
 4. Read the numbered English dialogue. Expand **Recognized source** for each bubble. Unreadable portions are marked rather than intentionally guessed; AI can still make recognition/translation mistakes.
 5. Each selected area appears as a readable card with its own Copy button and collapsible original text. New cards stack above earlier ones. Use **Copy all** to copy history in chronological order, **Clear history** to delete saved translations, or **Translate an area** to continue.
-6. After an error, fix the cause in Settings if needed, then use **Retry** and draw a new selection. Screenshots are discarded, so Retry deliberately requires reselection.
+6. While a translation runs, press the snip shortcut again to select the next bubble. Up to three requests may run at once; the controls pause at that limit. Clear history and Settings are disabled until all running work finishes. Each scan is billed normally; no extra concurrency fee is added by the extension.
+7. After an error, fix the cause in Settings if needed, then use **Retry** and draw a new selection. Screenshots are discarded, so Retry deliberately requires reselection.
 
 No full-page scan or image URL fetching occurs. Browser-restricted pages (including Chrome settings and the Web Store), DRM and protected content are not bypassed. Normal browser zoom is supported; reset trackpad pinch zoom before selection. Selection cancels if the viewport scrolls or resizes. Page animations may still change content; use a stable visible panel.
 
 ## Privacy and architecture
 
 - `src/selection.ts`: injected on demand in Chrome's isolated content-script world; captures viewport CSS coordinates, removes its overlay, then waits for paint. Receives no API key or image data.
-- `src/worker.ts`: coordinates `captureVisibleTab`, validates the active tab/viewport before and after capture, crops with `OffscreenCanvas`, then makes the single request from the service worker. Duplicate requests are blocked globally. Temporary keepalive activity only runs during an explicit selection/request.
+- `src/worker.ts`: coordinates `captureVisibleTab`, validates the active tab/viewport before and after capture, crops with `OffscreenCanvas`, then makes the single request from the service worker. Selection and capture are serialized, but up to three translation requests can run concurrently. Capture calls are spaced at least 550 ms apart. Each running or failed scan has its own status; results are ordered by scan time, not completion time. History writes are serialized to prevent lost results. Temporary keepalive activity only runs during an explicit selection/request.
 - `src/crop.ts`: maps CSS coordinates using actual screenshot width/viewport width and height/viewport height. This incorporates DPR and browser zoom without double-scaling; document scroll offsets are not added to viewport coordinates.
 - `src/api.ts`: OpenAI Responses API, `gpt-5.4-mini`, no reasoning delay, strict JSON output, `store: false`, no tools, no automatic retries. Requests time out after 25 seconds to stay within MV3 fetch lifecycle limits; select a smaller area if needed. Image text is explicitly treated as untrusted translation content.
 - `src/sidepanel.ts`: settings and safe text-only result rendering. Source and translation text are never rendered as HTML.

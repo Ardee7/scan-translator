@@ -12,6 +12,9 @@ test('worker workflow: crop only, duplicate guard, errors, retry, trusted storag
   let requests = 0;
   let captures = 0;
   let httpStatus = 200;
+  let deferred = false;
+  const responses: ((response: Response) => void)[] = [];
+  const captureTimes: number[] = [];
   let activeId = 7;
   let accessLevel = '';
   let selectGate: (() => void) | undefined;
@@ -36,7 +39,7 @@ test('worker workflow: crop only, duplicate guard, errors, retry, trusted storag
         sendMessage: async (v: any) => { state = v.state; }, onMessage: { addListener: (fn: any) => { listener = fn; } } },
       tabs: {
         query: async () => [{ id: activeId, windowId: 1, url: tabUrl }],
-        captureVisibleTab: async () => { captures++; return 'data:image/png;base64,RlVMTA=='; },
+        captureVisibleTab: async () => { captures++; captureTimes.push(Date.now()); return 'data:image/png;base64,RlVMTA=='; },
       },
       scripting: { executeScript: async (v: any) => {
         if (v.func.name === 'selectArea') {
@@ -57,13 +60,15 @@ test('worker workflow: crop only, duplicate guard, errors, retry, trusted storag
       const body = JSON.parse(init.body as string);
       assert.equal(body.input[0].content[1].image_url, 'data:image/png;base64,Q1JPUA==');
       assert.equal(body.store, false);
+      if (deferred) return new Promise<Response>(resolve => responses.push(resolve));
       return new Response(JSON.stringify({ status: 'completed', output: [{ content: [{ type: 'output_text', text: JSON.stringify({ language: 'French', bubbles: [{ source: 'Bonjour', translation: 'Hello', unreadable: false }] }) }] }] }), { status: httpStatus });
     },
   });
   const sender = { id: 'test', url: 'chrome-extension://test/sidepanel.html' };
   const send = (message: object, from = sender) => listener(message, from, () => {});
+  const latestState = (): State => state!;
   const until = async (phase: string) => {
-    for (let i = 0; i < 100 && state?.phase !== phase; i++) await new Promise(r => setTimeout(r, 5));
+    for (let i = 0; i < 400 && state?.phase !== phase; i++) await new Promise(r => setTimeout(r, 5));
     assert.equal(state?.phase, phase);
   };
   try {
@@ -129,5 +134,43 @@ test('worker workflow: crop only, duplicate guard, errors, retry, trusted storag
     await until('error');
     assert.match(state!.message, /active tab changed/);
     assert.equal(requests, 3);
+    // Hold provider responses open: new scans must reach the API before earlier ones finish.
+    activeId = 7;
+    waitSelection = false;
+    deferred = true;
+    const waitFor = async (condition: () => boolean) => {
+      for (let i = 0; i < 500 && !condition(); i++) await new Promise(r => setTimeout(r, 5));
+      assert.ok(condition());
+    };
+    for (let count = 1; count <= 3; count++) {
+      send({ type: 'start', windowId: 1 });
+      await waitFor(() => responses.length === count);
+      assert.equal(state!.captureBusy, false);
+      assert.equal(state!.activeRequests, count);
+    }
+    const ids = state!.jobs!.map(job => job.id);
+    send({ type: 'start', windowId: 1 });
+    commandListener('select-area', { id: 7, windowId: 1 });
+    send({ type: 'clear' });
+    await new Promise(r => setTimeout(r, 30));
+    assert.equal(responses.length, 3); // Bounded concurrency; clear cannot erase in-flight work.
+    assert.equal(state!.activeRequests, 3);
+    const complete = (text: string) => new Response(JSON.stringify({ status: 'completed', output: [{ content: [{ type: 'output_text', text: JSON.stringify({ language: 'French', bubbles: [{ source: text, translation: text, unreadable: false }] }) }] }] }));
+    responses[1](complete('Second scan'));
+    await waitFor(() => state!.history?.length === 1);
+    responses[0](complete('First scan'));
+    await waitFor(() => state!.history?.length === 2);
+    responses[2](new Response('{}', { status: 401 }));
+    await waitFor(() => state!.activeRequests === 0);
+    assert.deepEqual(latestState().history!.map(entry => entry.id), [ids[1], ids[0]]);
+    assert.deepEqual(storage.history, state!.history);
+    assert.equal(state!.jobs!.length, 1);
+    assert.equal(state!.jobs![0].id, ids[2]);
+    assert.equal(state!.jobs![0].status, 'error');
+    assert.match(state!.jobs![0].message, /Invalid API key/);
+    assert.ok(captureTimes.slice(1).every((time, i) => time - captureTimes[i] >= 500));
+    send({ type: 'clear' });
+    await until('idle');
+    assert.deepEqual(state!.jobs, []);
   } finally { globalThis.fetch = originalFetch; }
 });

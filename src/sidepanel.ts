@@ -28,14 +28,25 @@ function languageName(language: string) {
 function render(state: State) {
   current = state;
   const history = state.history ?? [];
-  const busy = state.phase === 'selecting' || state.phase === 'translating';
-  select.disabled = retry.disabled = clear.disabled = busy;
-  clear.disabled = busy || !history.length;
+  const busy = !!state.captureBusy || (state.activeRequests ?? 0) > 0;
+  const full = (state.activeRequests ?? 0) >= 3;
+  select.disabled = retry.disabled = !!state.captureBusy || full;
+  clear.disabled = busy || (!history.length && !state.jobs?.length);
   element<HTMLFormElement>('settings-form').querySelectorAll<HTMLInputElement | HTMLButtonElement>('input,button').forEach(el => el.disabled = busy);
   copy.disabled = !history.length;
   retry.hidden = state.phase !== 'error';
-  select.textContent = busy ? (state.phase === 'selecting' ? 'Draw your selection…' : 'Translating…') : 'Translate an area';
+  select.textContent = state.captureBusy ? (state.phase === 'selecting' ? 'Draw your selection…' : 'Capturing…') : full ? '3 translations running…' : 'Translate an area';
   status.textContent = state.message;
+  const jobs = element('jobs');
+  jobs.replaceChildren();
+  for (const job of [...(state.jobs ?? [])].reverse()) {
+    const row = document.createElement('p');
+    row.className = `scan-job ${job.status}`;
+    const time = new Date(job.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+    row.textContent = `${time} · ${job.message}`;
+    if (job.status === 'error') row.append(' Select the area again to retry.');
+    jobs.append(row);
+  }
   status.dataset.phase = state.phase;
   element('history-count').textContent = `${history.length} ${history.length === 1 ? 'area' : 'areas'}`;
   element('empty').hidden = history.length > 0;
@@ -79,7 +90,7 @@ async function settingsStatus() {
   element('key-status').textContent = saved.hasKey ? 'Key saved. Leave blank to keep it.' : 'No API key saved.';
 }
 async function start() {
-  if (starting || current?.phase === 'selecting' || current?.phase === 'translating') return;
+  if (starting || current?.captureBusy || (current?.activeRequests ?? 0) >= 3) return;
   starting = true;
   try {
     const window = await chrome.windows.getCurrent();

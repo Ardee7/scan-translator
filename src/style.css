@@ -34,3 +34,6 @@ h2 { font-size: 15px; margin: 0; } #history-count { font-size: 12px; color: #647
 .dialogue .translation { font-size: 17px; line-height: 1.65; color: #17283e; margin: 0 0 8px; }
 .dialogue details { border: 0; background: #f6f8fb; padding: 7px 10px; border-radius: 6px; color: #5b6d83; }
 .dialogue summary { font-weight: 400; }
+
+.scan-job { padding: 10px 12px; border-radius: 8px; background: #e8eef8; font-size: 12px; overflow-wrap: anywhere; }
+.scan-job.error { background: #fce9e6; color: #902e24; }

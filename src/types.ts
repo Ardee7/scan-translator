@@ -12,7 +12,16 @@ export interface HistoryEntry {
   createdAt: number;
   result: Translation;
 }
+export interface ScanJob {
+  id: string;
+  createdAt: number;
+  status: 'translating' | 'error';
+  message: string;
+}
 export interface State {
+  captureBusy?: boolean;
+  activeRequests?: number;
+  jobs?: ScanJob[];
   history?: HistoryEntry[];
   phase: 'idle' | 'selecting' | 'translating' | 'success' | 'error';
   message: string;
