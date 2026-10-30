@@ -1,4 +1,4 @@
-import { findTextRegion } from './text-region';
+import { findFlexibleBubble } from './flexible-bubble';
 import type { Selection } from './types';
 
 // Flood-fill the white interior around a click. Reject open/oversized regions rather
@@ -38,7 +38,7 @@ export function findBubble(data: Uint8ClampedArray, width: number, height: numbe
     : 'No white bubble found. Click the white space inside a bubble, or use drag selection.');
 }
 
-export async function detectBubble(image: string, s: Selection, textMode = false): Promise<Selection> {
+export async function detectBubble(image: string, s: Selection, flexible = false): Promise<Selection> {
   const bytes = Uint8Array.from(atob(image.split(',')[1]), c => c.charCodeAt(0));
   const bitmap = await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
   try {
@@ -48,7 +48,7 @@ export async function detectBubble(image: string, s: Selection, textMode = false
     const canvas = new OffscreenCanvas(width, height);
     const ctx = canvas.getContext('2d')!;
     ctx.drawImage(bitmap, 0, 0, width, height);
-    const r = (textMode ? findTextRegion : findBubble)(ctx.getImageData(0, 0, width, height).data, width, height, s.x * scale, s.y * scale);
+    const r = (flexible ? findFlexibleBubble : findBubble)(ctx.getImageData(0, 0, width, height).data, width, height, s.x * scale, s.y * scale);
     return { ...s, x: r.x / scale, y: r.y / scale, width: r.width / scale, height: r.height / scale };
   } finally { bitmap.close(); }
 }

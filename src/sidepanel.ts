@@ -27,8 +27,8 @@ function languageName(language: string) {
 }
 function render(state: State) {
   current = state;
-  element<HTMLInputElement>('text-detection').checked = !!state.textDetection;
-  element<HTMLInputElement>('text-detection').disabled = !!state.captureBusy;
+  element<HTMLInputElement>('flexible-bubbles').checked = !!state.flexibleBubbles;
+  element<HTMLInputElement>('flexible-bubbles').disabled = !!state.captureBusy;
   element<HTMLInputElement>('click-mode').checked = !!state.clickMode;
   element<HTMLInputElement>('click-mode').disabled = !!state.captureBusy;
   const history = state.history ?? [];
@@ -141,12 +141,12 @@ element<HTMLInputElement>('click-mode').onchange = async () => {
   finally { toggle.disabled = !!current?.captureBusy; }
 };
 
-element<HTMLInputElement>('text-detection').onchange = async () => {
-  const toggle = element<HTMLInputElement>('text-detection');
+element<HTMLInputElement>('flexible-bubbles').onchange = async () => {
+  const toggle = element<HTMLInputElement>('flexible-bubbles');
   toggle.disabled = true;
   try {
-    const response = await send({ type: 'setTextDetection', enabled: toggle.checked });
+    const response = await send({ type: 'setFlexibleBubbles', enabled: toggle.checked });
     if (response?.error) throw new Error();
-  } catch { toggle.checked = !!current?.textDetection; status.textContent = 'Could not save detection preference. Try again.'; }
+  } catch { toggle.checked = !!current?.flexibleBubbles; status.textContent = 'Could not save detection preference. Try again.'; }
   finally { toggle.disabled = !!current?.captureBusy; }
 };

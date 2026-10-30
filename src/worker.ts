@@ -1,4 +1,3 @@
-import { confirmTextRegion } from './text-preview';
 import { bubbleMode } from './bubble-mode';
 import { detectBubble } from './bubble';
 import { cropScreenshot } from './crop';
@@ -17,12 +16,12 @@ chrome.action.onClicked.addListener(tab => {
 });
 let state: State = { phase: 'idle', message: 'Save your API key, then select a visible comic region.' };
 let history: HistoryEntry[] = [];
-let textDetection = false;
+let flexibleBubbles = true;
 const historyReady = protectedStorage.then(async () => {
-  const saved = await chrome.storage.local.get(['history', 'textDetection']);
-  textDetection = saved.textDetection === true;
+  const saved = await chrome.storage.local.get(['history', 'flexibleBubbles']);
+  flexibleBubbles = saved.flexibleBubbles !== false;
   history = Array.isArray(saved.history) ? saved.history as HistoryEntry[] : [];
-  state = { ...state, history, textDetection };
+  state = { ...state, history, flexibleBubbles };
 });
 let clickMode: { tabId: number; token: string } | undefined;
 const modeReady = chrome.storage.session.get('clickMode').then(saved => {
@@ -77,7 +76,7 @@ function update(next: State) {
   // A completed background request must not replace instructions for the current selection.
   const visible = busy && (next.phase === 'success' || next.phase === 'error')
     ? { ...next, phase: state.phase, message: state.message } : next;
-  state = { ...visible, textDetection, clickMode: !!clickMode, history, jobs: [...jobs], captureBusy: busy, activeRequests: activeRequests() };
+  state = { ...visible, flexibleBubbles, clickMode: !!clickMode, history, jobs: [...jobs], captureBusy: busy, activeRequests: activeRequests() };
   void chrome.runtime.sendMessage({ type: 'state', state }).catch(() => {});
   if (clickMode) {
     const count = jobs.filter(job => job.tabId === clickMode!.tabId && job.status === 'translating').length;
@@ -142,14 +141,7 @@ async function run(windowId: number, expectedTabId?: number, clicked?: Selection
     try { screenshot = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' }); }
     catch { throw new Error('Chrome blocked capture. Click the toolbar icon on this tab and retry on an unrestricted HTTP/HTTPS page.'); }
     await assertSameViewport(tab, selection);
-    const detectingText = !!clicked && textDetection;
-    if (clicked) selection = await detectBubble(screenshot, selection, detectingText);
-    if (detectingText) {
-      update({ phase: 'selecting', message: 'Review the highlighted text. Enter translates; Esc cancels without an API request.' });
-      const [preview] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: confirmTextRegion, args: [selection] });
-      if (!preview.result) throw new Error('Text selection cancelled. No API request was sent.');
-      await assertSameViewport(tab, selection);
-    }
+    if (clicked) selection = await detectBubble(screenshot, selection, flexibleBubbles);
     cropped = await cropScreenshot(screenshot, selection);
     screenshot = '';
     if (hiddenTab) {
@@ -181,7 +173,7 @@ async function run(windowId: number, expectedTabId?: number, clicked?: Selection
       history = [{ id: job.id, createdAt: job.createdAt, result }, ...history].sort((a, b) => b.createdAt - a.createdAt);
       message = 'Translation added to your history.';
       if (overlayToken && clickMode?.token === overlayToken && (!clicked || overlayToken === modeToken)) {
-        await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: bubbleMode, args: ['result', overlayToken, selection, result.bubbles.map(b => b.translation).join('\n\n'), !clicked || detectingText] }).catch(() => {});
+        await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: bubbleMode, args: ['result', overlayToken, selection, result.bubbles.map(b => b.translation).join('\n\n'), !clicked] }).catch(() => {});
       }
       const snapshot = history;
       const write = historyWrite.catch(() => {}).then(() => chrome.storage.local.set({ history: snapshot }));
@@ -221,7 +213,7 @@ async function setClickMode(enabled: boolean, windowId: number) {
     clickMode = { tabId: tab.id, token };
     await chrome.storage.session.set({ clickMode });
   }
-  update({ ...state, message: clickMode ? (textDetection ? 'Click near text, then confirm the highlighted crop. Translation uses API credits.' : 'Click white space inside a speech bubble. Each click can use API credits. Esc exits.') : 'Click mode off. Snipping is still available.' });
+  update({ ...state, message: clickMode ? (flexibleBubbles ? 'Click inside a colored, dark, or white bubble. Translation uses API credits. Esc exits.' : 'Click white space inside a speech bubble. Each click can use API credits. Esc exits.') : 'Click mode off. Snipping is still available.' });
 }
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   // Restore the per-tab capability after service-worker suspension before accepting clicks.
@@ -244,11 +236,11 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   }
   // Only the bundled side panel may initiate capture, change settings or read state.
   if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL('sidepanel.html')) return;
-  if (message.type === 'setTextDetection' && !busy) {
+  if (message.type === 'setFlexibleBubbles' && !busy) {
     void historyReady.then(async () => {
-      textDetection = message.enabled === true;
-      await chrome.storage.local.set({ textDetection });
-      update({ ...state, message: textDetection ? 'Local text detection: click near text, then confirm the highlighted crop. Detection is free; translation uses API credits.' : 'White-bubble detection selected.' });
+      flexibleBubbles = message.enabled === true;
+      await chrome.storage.local.set({ flexibleBubbles });
+      update({ ...state, message: flexibleBubbles ? 'Flexible bubbles: click inside the bubble, including its empty background. Translation uses API credits.' : 'White-bubble detection selected.' });
       respond({ ok: true });
     }).catch(() => respond({ error: true }));
     return true;

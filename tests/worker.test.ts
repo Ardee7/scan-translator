@@ -8,8 +8,6 @@ test('worker workflow: crop only, duplicate guard, errors, retry, trusted storag
   let commandListener: any;
   let navigationListener: any;
   let modeToken = '';
-  let textFixture = false;
-  let confirmPreview = false;
   const modeActions: string[] = [];
   const loadingMessages: string[] = [];
   const session: Record<string, unknown> = {};
@@ -56,7 +54,6 @@ test('worker workflow: crop only, duplicate guard, errors, retry, trusted storag
           if (v.args[0] === 'enable') modeToken = v.args[1];
           return [{}];
         }
-        if (v.func.name === 'confirmTextRegion') return [{ result: confirmPreview }];
         if (v.func.name === 'selectArea') {
           if (waitSelection) await new Promise<void>(r => { selectGate = r; });
           return [{ result: selection }];
@@ -68,13 +65,10 @@ test('worker workflow: crop only, duplicate guard, errors, retry, trusted storag
     OffscreenCanvas: class {
       constructor(public width: number, public height: number) {}
       getContext() { return {
-        drawImage: (_: unknown, ...args: number[]) => { if (!textFixture || args.length === 4) assert.deepEqual(args, args.length === 4 ? [0, 0, 1000, 800] : [200, 100, 400, 300, 0, 0, 400, 300]); else assert.ok(args[2] > 0 && args[2] < 400 && args[3] > 0 && args[3] < 300); },
+        drawImage: (_: unknown, ...args: number[]) => assert.deepEqual(args, args.length === 4 ? [0, 0, 1000, 800] : [200, 100, 400, 300, 0, 0, 400, 300]),
         getImageData: () => {
           const data = new Uint8ClampedArray(1000 * 800 * 4);
           for (let y = 50; y < 200; y++) for (let x = 100; x < 300; x++) data.fill(255, (y * 1000 + x) * 4, (y * 1000 + x) * 4 + 4);
-          if (textFixture) for (let i = 0; i < 6; i++) for (let y = 0; y < 16; y++) for (let x = 0; x < 10; x++) {
-            if (x < 2 || x >= 8 || (y >= 7 && y < 9)) data.fill(0, ((90 + y) * 1000 + 120 + i * 15 + x) * 4, ((90 + y) * 1000 + 120 + i * 15 + x) * 4 + 3);
-          }
           return { data };
         },
       }; }
@@ -235,21 +229,16 @@ test('worker workflow: crop only, duplicate guard, errors, retry, trusted storag
     assert.equal(openedWindow, undefined);
     send({ type: 'clear' });
     await until('idle');
-    await panelCall({ type: 'setTextDetection', enabled: true });
-    assert.equal(state!.textDetection, true);
-    assert.equal(storage.textDetection, true);
-    textFixture = true;
-    const textClick = { ...clickMessage, token: modeToken };
-    const beforeTextRequest = requests;
-    listener(textClick, clickSender, () => {});
-    await until('error');
-    assert.match(state!.message, /cancelled/);
-    assert.equal(requests, beforeTextRequest);
-    assert.equal(state!.captureBusy, false);
-    confirmPreview = true;
-    listener(textClick, clickSender, () => {});
+    assert.equal(state!.flexibleBubbles, true);
+    await panelCall({ type: 'setFlexibleBubbles', enabled: false });
+    assert.equal(state!.flexibleBubbles, false);
+    assert.equal(storage.flexibleBubbles, false);
+    await panelCall({ type: 'setFlexibleBubbles', enabled: true });
+    assert.equal(storage.flexibleBubbles, true);
+    const beforeFlexibleRequest = requests;
+    listener({ ...clickMessage, token: modeToken }, clickSender, () => {});
     await until('success');
-    assert.equal(requests, beforeTextRequest + 1);
+    assert.equal(requests, beforeFlexibleRequest + 1);
     assert.equal(state!.history!.length, 1);
     navigationListener(7, { status: 'loading' });
     await waitFor(() => state!.clickMode === false);

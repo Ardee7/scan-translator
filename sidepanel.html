@@ -14,9 +14,9 @@
     </form>
   </details>
   <label class="mode-toggle"><input id="click-mode" type="checkbox"> Click-to-translate mode</label>
-  <label class="mode-toggle"><input id="text-detection" type="checkbox"> Detect nearby text on any background (experimental)</label>
-  <p class="privacy">Text detection runs locally for free. Click near text and confirm the highlighted crop; translation still uses API credits. For stylized text or incorrect crops, cancel and snip manually.</p>
-  <p class="privacy">With white-bubble detection: click white space inside a bubble → English overlay. Hover to reveal original. Esc exits. If detection fails, snip manually. Each new translation uses API credits.</p>
+  <label class="mode-toggle"><input id="flexible-bubbles" type="checkbox"> Flexible bubbles: colored, dark, or white</label>
+  <p class="privacy">Click inside a bubble in the comic image—even on empty background. Its color and shape do not need to match a template. Detection is local and free; translation still uses API credits. If its boundary blends into the artwork, snip manually.</p>
+  <p class="privacy">Click a bubble → English overlay. Turn off flexible detection to use the original white-only detector. Hover to reveal original. Esc exits. If detection fails, snip manually. Each new translation uses API credits.</p>
   <button id="select" class="primary">Select area to translate</button>
   <p id="shortcut" class="privacy"></p>
   <p class="privacy">Text history stays on this device until cleared. Images are never saved.</p>
