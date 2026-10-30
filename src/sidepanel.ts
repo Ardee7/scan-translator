@@ -125,9 +125,8 @@ void Promise.all([send({ type: 'getState' }).then(render), settingsStatus()]).ca
 
 void chrome.commands.getAll().then(commands => {
   const shortcut = commands.find(command => command.name === 'select-area')?.shortcut;
-  element('shortcut').textContent = shortcut
-    ? `Snip: ${shortcut} · Esc to cancel`
-    : 'Assign a snip shortcut at chrome://extensions/shortcuts. Esc cancels selection.';
+  const modeShortcut = commands.find(command => command.name === 'toggle-click-mode')?.shortcut;
+  element('shortcut').textContent = `Snip: ${shortcut || 'unassigned'} · Click mode: ${modeShortcut || 'unassigned'} · Esc exits. Change shortcuts at chrome://extensions/shortcuts.`;
 });
 
 element<HTMLInputElement>('click-mode').onchange = async () => {

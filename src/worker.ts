@@ -44,13 +44,20 @@ chrome.tabs.onRemoved.addListener(tabId => {
 });
 const bubbleCache = new Map<string, Promise<import('./types').Translation>>();
 let busy = false; // Only selection/capture owns this lock; API calls may overlap.
-let jobs: ScanJob[] = [];
+let jobs: (ScanJob & { tabId: number })[] = [];
 const activeRequests = () => jobs.filter(job => job.status === 'translating').length;
 let lastCaptureAt = 0;
 let lastScanAt = 0;
 let historyWrite = Promise.resolve();
 let openingFromShortcut = false;
 chrome.commands.onCommand.addListener((command, tab) => {
+  if (command === 'toggle-click-mode' && tab?.id && !busy && !openingFromShortcut) {
+    openingFromShortcut = true;
+    void modeReady.then(() => setClickMode(clickMode?.tabId !== tab.id, tab.windowId)).catch(e => {
+      update({ phase: 'error', message: e instanceof Error ? e.message : 'Could not toggle click mode.' });
+    }).finally(() => { openingFromShortcut = false; });
+    return;
+  }
   if (command !== 'select-area' || !tab?.id || busy || activeRequests() >= 3 || openingFromShortcut) return;
   openingFromShortcut = true;
   // Open directly in the keyboard gesture; awaiting other work first can lose that gesture.
@@ -69,6 +76,11 @@ function update(next: State) {
     ? { ...next, phase: state.phase, message: state.message } : next;
   state = { ...visible, clickMode: !!clickMode, history, jobs: [...jobs], captureBusy: busy, activeRequests: activeRequests() };
   void chrome.runtime.sendMessage({ type: 'state', state }).catch(() => {});
+  if (clickMode) {
+    const count = jobs.filter(job => job.tabId === clickMode!.tabId && job.status === 'translating').length;
+    void chrome.scripting.executeScript({ target: { tabId: clickMode.tabId }, func: bubbleMode,
+      args: ['status', clickMode.token, null, count ? `Translating${count > 1 ? ` (${count})` : ''}…` : ''] }).catch(() => {});
+  }
 }
 async function assertSameViewport(tab: chrome.tabs.Tab, s: Selection) {
   const [active] = await chrome.tabs.query({ active: true, windowId: tab.windowId });
@@ -85,7 +97,7 @@ async function run(windowId: number, expectedTabId?: number, clicked?: Selection
   // Chrome API activity keeps MV3 alive while selecting and awaiting the provider.
   const keepAlive = setInterval(() => void chrome.runtime.getPlatformInfo(), 20_000);
   let ownsCapture = true;
-  let job: ScanJob | undefined;
+  let job: (ScanJob & { tabId: number }) | undefined;
   let screenshot = '';
   let cropped = '';
   let hiddenTab: number | undefined;
@@ -135,7 +147,7 @@ async function run(windowId: number, expectedTabId?: number, clicked?: Selection
       hiddenTab = undefined;
     }
     lastScanAt = Math.max(Date.now(), lastScanAt + 1);
-    job = { id: crypto.randomUUID(), createdAt: lastScanAt, status: 'translating', message: 'Translating…' };
+    job = { tabId: tab.id, id: crypto.randomUUID(), createdAt: lastScanAt, status: 'translating', message: 'Translating…' };
     jobs = [...jobs, job];
     busy = false;
     ownsCapture = false;
@@ -184,6 +196,23 @@ async function run(windowId: number, expectedTabId?: number, clicked?: Selection
     if (ownsCapture) busy = false;
   }
 }
+async function setClickMode(enabled: boolean, windowId: number) {
+  await modeReady;
+  if (clickMode) {
+    await chrome.scripting.executeScript({ target: { tabId: clickMode.tabId }, func: bubbleMode, args: ['disable'] }).catch(() => {});
+    clickMode = undefined;
+    await chrome.storage.session.remove('clickMode');
+  }
+  if (enabled) {
+    const [tab] = await chrome.tabs.query({ active: true, windowId });
+    if (!tab?.id || !/^https?:\/\//.test(tab.url ?? '')) throw new Error('Click the Scan Translator toolbar icon on your comic tab to grant access first.');
+    const token = crypto.randomUUID();
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: bubbleMode, args: ['enable', token] });
+    clickMode = { tabId: tab.id, token };
+    await chrome.storage.session.set({ clickMode });
+  }
+  update({ ...state, message: clickMode ? 'Click white space inside a speech bubble. Each click can use API credits. Esc exits.' : 'Click mode off. Snipping is still available.' });
+}
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   // Restore the per-tab capability after service-worker suspension before accepting clicks.
   if ((message.type === 'bubbleClick' || message.type === 'bubbleExit') && sender.id === chrome.runtime.id && sender.frameId === 0) {
@@ -207,21 +236,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL('sidepanel.html')) return;
   if (message.type === 'setClickMode' && !busy) {
     void (async () => {
-      await modeReady;
-      if (clickMode) {
-        await chrome.scripting.executeScript({ target: { tabId: clickMode.tabId }, func: bubbleMode, args: ['disable'] }).catch(() => {});
-        clickMode = undefined;
-        await chrome.storage.session.remove('clickMode');
-      }
-      if (message.enabled) {
-        const [tab] = await chrome.tabs.query({ active: true, windowId: message.windowId });
-        if (!tab?.id || !/^https?:\/\//.test(tab.url ?? '')) throw new Error('Click the Scan Translator toolbar icon on your comic tab to grant access first.');
-        const token = crypto.randomUUID();
-        await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: bubbleMode, args: ['enable', token] });
-        clickMode = { tabId: tab.id, token };
-        await chrome.storage.session.set({ clickMode });
-      }
-      update({ ...state, message: clickMode ? 'Click white space inside a speech bubble. Each click can use API credits. Esc exits.' : 'Click mode off. Snipping is still available.' });
+      await setClickMode(message.enabled, message.windowId);
       respond({ ok: true });
     })().catch(e => { update({ phase: 'error', message: e instanceof Error ? e.message : 'Could not enable click mode.' }); respond({ error: true }); });
     return true;

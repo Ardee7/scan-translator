@@ -98,3 +98,5 @@ Manual acceptance checklist:
 - Verify Copy, Clear, empty-text handling and restricted-page errors. Clear must preserve Settings.
 
 Click-mode automated checks cover closed-bubble detection with dark lettering, refusal of open backgrounds/clipped bubbles/tiny highlights, authorized versus forged click messages, crop-only submission, cached repeats, manual snipping with overlays hidden, and navigation cleanup. Live Chrome rendering, white-bubble detection on actual Webtoon art, hover/popup interaction and overlay alignment still need a manual check. No live paid calls were used to test this feature.
+
+Click-mode shortcut: **Option+Shift+T** on Mac, **Alt+Shift+T** on Windows/Linux toggles the mode without opening the side panel. Assign it at `chrome://extensions/shortcuts` if unavailable. A spinner beside the cursor shows pending translations (and the count for concurrent requests), even with the panel closed. It disappears when requests finish or fail, and is hidden during screenshots.

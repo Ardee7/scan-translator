@@ -33,6 +33,13 @@
         "mac": "Command+Shift+S"
       },
       "description": "Snip a comic area to translate"
+    },
+    "toggle-click-mode": {
+      "suggested_key": {
+        "default": "Alt+Shift+T",
+        "mac": "Alt+Shift+T"
+      },
+      "description": "Toggle click-to-translate mode"
     }
   }
 }

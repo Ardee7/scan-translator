@@ -9,6 +9,7 @@ test('worker workflow: crop only, duplicate guard, errors, retry, trusted storag
   let navigationListener: any;
   let modeToken = '';
   const modeActions: string[] = [];
+  const loadingMessages: string[] = [];
   const session: Record<string, unknown> = {};
   let openedWindow: number | undefined;
   let tabUrl: string | undefined = 'https://example.com';
@@ -49,6 +50,7 @@ test('worker workflow: crop only, duplicate guard, errors, retry, trusted storag
       scripting: { executeScript: async (v: any) => {
         if (v.func.name === 'bubbleMode') {
           modeActions.push(v.args[0]);
+          if (v.args[0] === 'status') loadingMessages.push(v.args[3]);
           if (v.args[0] === 'enable') modeToken = v.args[1];
           return [{}];
         }
@@ -198,7 +200,7 @@ test('worker workflow: crop only, duplicate guard, errors, retry, trusted storag
     listener({ type: 'bubbleClick', token: 'forged', selection }, { id: 'test', frameId: 0, tab: { id: 7, windowId: 1 }, url: viewport.url }, () => {});
     await new Promise(r => setTimeout(r, 10));
     assert.equal(requests, previousRequests);
-    assert.equal(modeActions.at(-1), 'enable');
+    assert.equal(modeActions.at(-1), 'status');
     // Manual snipping remains usable in mode and hides/restores page overlays.
     deferred = false;
     send({ type: 'start', windowId: 1 });
@@ -216,6 +218,15 @@ test('worker workflow: crop only, duplicate guard, errors, retry, trusted storag
     listener(clickMessage, clickSender, () => {});
     await waitFor(() => state!.history!.length === beforeHistory + 2 && state!.activeRequests === 0);
     assert.equal(requests, beforeClick + 1); // Identical crop reuses the in-memory translation.
+    assert.ok(loadingMessages.includes('Translating…'));
+    assert.equal(loadingMessages.at(-1), '');
+    openedWindow = undefined;
+    commandListener('toggle-click-mode', { id: 7, windowId: 1 });
+    await waitFor(() => state!.clickMode === false);
+    await new Promise(r => setTimeout(r, 10));
+    commandListener('toggle-click-mode', { id: 7, windowId: 1 });
+    await waitFor(() => state!.clickMode === true);
+    assert.equal(openedWindow, undefined);
     navigationListener(7, { status: 'loading' });
     await waitFor(() => state!.clickMode === false);
     assert.equal(session.clickMode, undefined);
