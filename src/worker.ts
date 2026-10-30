@@ -59,6 +59,10 @@ let historyWrite = Promise.resolve();
 let openingFromShortcut = false;
 chrome.commands.onCommand.addListener((command, tab) => {
   if (batch) return;
+  if (command === 'scan-viewport' && tab?.id && !openingFromShortcut) {
+    void scanViewport(tab.windowId, tab.id);
+    return;
+  }
   if (command === 'toggle-click-mode' && tab?.id && !busy && !openingFromShortcut) {
     openingFromShortcut = true;
     void modeReady.then(() => setClickMode(clickMode?.tabId !== tab.id, tab.windowId)).catch(e => {
@@ -217,7 +221,7 @@ async function submitCrop(tab: chrome.tabs.Tab, selection: Selection, cropped: s
     return false;
   } finally { cropped = ''; }
 }
-async function scanViewport(windowId: number) {
+async function scanViewport(windowId: number, expectedTabId?: number) {
   if (busy || batch || activeRequests()) return;
   busy = true;
   batch = { total: 0, done: 0, cancelled: false };
@@ -229,6 +233,7 @@ async function scanViewport(windowId: number) {
     await Promise.all([historyReady, modeReady]);
     const [tab] = await chrome.tabs.query({ active: true, windowId });
     if (!tab?.id || !/^https?:\/\//.test(tab.url ?? '')) throw new Error('Open a comic page and click the extension toolbar icon to grant access first.');
+    if (expectedTabId !== undefined && tab.id !== expectedTabId) throw new Error('The active tab changed. Press the shortcut again on your comic tab.');
     if (clickMode?.tabId !== tab.id) await setClickMode(true, windowId);
     const token = clickMode!.token;
     await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: bubbleMode, args: ['hide'] });

@@ -131,8 +131,9 @@ void Promise.all([send({ type: 'getState' }).then(render), settingsStatus()]).ca
 
 void chrome.commands.getAll().then(commands => {
   const shortcut = commands.find(command => command.name === 'select-area')?.shortcut;
+  const scanShortcut = commands.find(command => command.name === 'scan-viewport')?.shortcut;
   const modeShortcut = commands.find(command => command.name === 'toggle-click-mode')?.shortcut;
-  element('shortcut').textContent = `Snip: ${shortcut || 'unassigned'} · Click mode: ${modeShortcut || 'unassigned'} · Esc exits. Change shortcuts at chrome://extensions/shortcuts.`;
+  element('shortcut').textContent = `Screen: ${scanShortcut || 'unassigned'} · Space confirms preview · Snip: ${shortcut || 'unassigned'} · Click mode: ${modeShortcut || 'unassigned'} · Esc exits. Change shortcuts at chrome://extensions/shortcuts.`;
 });
 
 element<HTMLInputElement>('click-mode').onchange = async () => {

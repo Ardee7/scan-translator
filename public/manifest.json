@@ -40,6 +40,13 @@
         "mac": "Alt+Shift+T"
       },
       "description": "Toggle click-to-translate mode"
+    },
+    "scan-viewport": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+U",
+        "mac": "Command+D"
+      },
+      "description": "Translate visible screen"
     }
   }
 }

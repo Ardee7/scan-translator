@@ -14,7 +14,7 @@ export function previewScan(regions: Selection[]): Promise<number[]> {
       .controls { position:fixed; bottom:16px; left:16px; max-width:440px; padding:16px; border-radius:12px; background:#17283e; color:white; font:16px/1.5 system-ui; box-shadow:0 2px 12px #0005; }
       .controls button { padding:8px 12px; margin:8px 8px 0 0; }
       </style><div class="regions"></div><div class="controls" role="dialog" aria-label="Review detected bubbles">
-      Click a highlighted region to include or exclude it. Detection can mistake artwork for text.
+      Click a highlighted region to include or exclude it. Press Space to translate your selection. Detection can mistake artwork for text.
       <div id="count" aria-live="polite"></div><div id="estimate"></div><small>Each selected bubble uses one normal paid translation request. Actual cost varies with image size and dialogue.</small><br>
       <button id="translate"></button><button id="cancel">Cancel (Esc)</button></div>`;
     const selected = new Set(regions.map((_, i) => i));
@@ -22,7 +22,7 @@ export function previewScan(regions: Selection[]): Promise<number[]> {
     const refresh = () => {
       root.querySelector('#count')!.textContent = `${selected.size} of ${regions.length} bubbles selected`;
       root.querySelector('#estimate')!.textContent = `Example total: ~$${(selected.size * .00375).toFixed(4)} at 2,000 input + 500 output tokens per bubble, using the rates in Settings. This is not a spending cap.`;
-      confirm.textContent = `Translate ${selected.size} bubbles`; confirm.disabled = !selected.size;
+      confirm.textContent = `Translate ${selected.size} bubbles (Space)`; confirm.disabled = !selected.size;
     };
     regions.forEach((r, i) => {
       const button = document.createElement('button'); button.className = 'region';
@@ -38,7 +38,14 @@ export function previewScan(regions: Selection[]): Promise<number[]> {
       document.removeEventListener('visibilitychange', cancel); resolve(indices);
     };
     const cancel = () => finish([]);
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); cancel(); } };
+    const key = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); cancel(); return; }
+      if ((e.code === 'Space' || e.key === ' ') && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+        e.preventDefault(); e.stopImmediatePropagation();
+        // One deliberate press approves the preview; page-generated events cannot submit.
+        if (e.isTrusted && !e.repeat && selected.size) finish([...selected].sort((a, b) => a - b));
+      }
+    };
     const timer = setTimeout(cancel, 60_000);
     confirm.onclick = () => finish([...selected].sort((a, b) => a - b)); root.querySelector('#cancel')!.addEventListener('click', cancel);
     window.addEventListener('keydown', key, true); window.addEventListener('scroll', cancel, true); window.addEventListener('resize', cancel);

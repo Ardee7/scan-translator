@@ -5,6 +5,7 @@ import type { State, Selection } from '../src/types';
 
 test('viewport capture previews free, submits only approved crops, skips repeats, limits concurrency and stops queued work', async () => {
   const fixture = scanFixture();
+  let commandListener: any;
   let listener: any, state: State | undefined, captures = 0, requests = 0;
   let preview: { regions: Selection[]; resolve: (v: any) => void } | undefined;
   const replies: ((r: Response) => void)[] = [];
@@ -19,7 +20,7 @@ test('viewport capture previews free, submits only approved crops, skips repeats
     chrome: {
       storage: { local: { setAccessLevel: async () => {}, get: async () => ({ ...storage }), set: async (v: object) => Object.assign(storage, v), remove: async (key: string) => { delete storage[key]; } },
         session: { get: async () => ({ ...session }), set: async (v: object) => Object.assign(session, v), remove: async (key: string) => { delete session[key]; } } },
-      sidePanel: { setPanelBehavior: async () => {}, open: async () => {} }, action: { onClicked: events }, commands: { onCommand: events },
+      sidePanel: { setPanelBehavior: async () => {}, open: async () => {} }, action: { onClicked: events }, commands: { onCommand: { addListener: (fn: any) => { commandListener = fn; } } },
       runtime: { id: 'test', getURL: (s: string) => `chrome-extension://test/${s}`, getPlatformInfo: async () => ({}), sendMessage: async (m: any) => { state = m.state; }, onMessage: { addListener: (fn: any) => { listener = fn; } } },
       tabs: { onUpdated: events, onRemoved: events, query: async () => [tab], captureVisibleTab: async () => { captures++; return 'data:image/png;base64,RlVMTA=='; } },
       scripting: { executeScript: async (call: any) => {
@@ -50,8 +51,10 @@ test('viewport capture previews free, submits only approved crops, skips repeats
   const response = () => new Response(JSON.stringify({ status: 'completed', output: [{ content: [{ type: 'output_text', text: JSON.stringify({ language: 'fr', bubbles: [{ source: 'Bonjour', translation: 'Hello', unreadable: false }] }) }] }] }));
   try {
     await import('../src/worker');
-    send({ type: 'scanViewport', windowId: 1 });
+    commandListener('scan-viewport', tab);
     await wait(() => !!preview);
+    commandListener('scan-viewport', tab); // Repeated shortcut cannot duplicate a scan.
+    assert.equal(captures, 1);
     assert.equal(captures, 1); assert.equal(requests, 0); assert.equal(preview!.regions.length, 4);
     preview!.resolve([]);
     await wait(() => !state?.batch);
