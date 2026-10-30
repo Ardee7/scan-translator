@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Scan Translator</title></head>
+<body><main>
+  <h1>Scan Translator</h1><p class="subtitle">Read the story. Keep your translations.</p>
+  <details id="settings"><summary>Settings</summary>
+    <p>Personal MVP: your API key is stored locally in this extension, not synced or encrypted as a vault. It is never shared with the comic page.</p>
+    <form id="settings-form">
+      <label for="key">OpenAI API key</label><input id="key" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your personal API key">
+      <p id="key-status"></p>
+      <p>Model: GPT-5.4 mini · Auto-detect → English</p>
+      <p><strong>Paid API:</strong> $0.75 / 1M input tokens + $4.50 / 1M output tokens. Example: 2,000 input + 500 output ≈ $0.00375. Actual cost varies. <a href="https://developers.openai.com/api/docs/models/gpt-5.4-mini" target="_blank" rel="noreferrer">Pricing</a></p>
+      <label class="consent"><input id="consent" type="checkbox"> I accept API charges when I select and release an area.</label>
+      <div class="actions"><button type="submit">Save settings</button><button type="button" id="remove">Remove key</button></div>
+    </form>
+  </details>
+  <button id="select" class="primary">Select area to translate</button>
+  <p id="shortcut" class="privacy"></p>
+  <p class="privacy">Text history stays on this device until cleared. Images are never saved.</p>
+  <p id="status" role="status" aria-live="polite"></p>
+  <div class="actions"><button id="retry" hidden>Retry</button><button id="copy" disabled>Copy all</button><button id="clear">Clear history</button></div>
+  <div class="history-heading"><h2>Your translations</h2><span id="history-count"></span></div>
+  <p id="empty" class="empty">Your story starts here.<br>Snip a speech bubble to add its English translation.</p>
+  <div id="results"></div>
+</main><script type="module" src="/src/sidepanel.ts"></script></body></html>
